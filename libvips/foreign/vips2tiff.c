@@ -1117,18 +1117,18 @@ wtiff_new( VipsImage *im, const char *filename,
 static void
 LabQ2LabC( VipsPel *q, VipsPel *p, int n )
 {
-    int x;
+	int x;
 
-    for( x = 0; x < n; x++ ) {
-        /* Get most significant 8 bits of lab.
-            */
-        q[0] = p[0];
-        q[1] = p[1];
-        q[2] = p[2];
+	for( x = 0; x < n; x++ ) {
+		/* Get most significant 8 bits of lab.
+		 */
+		q[0] = p[0];
+		q[1] = p[1];
+		q[2] = p[2];
 
-        p += 4;
-        q += 3;
-    }
+		p += 4;
+		q += 3;
+	}
 }
 
 /* Pack 8 bit VIPS to 1 bit TIFF.
@@ -1240,14 +1240,16 @@ LabS2Lab16( VipsPel *q, VipsPel *p, int n, int samples_per_pixel )
 {
 	int x;
 	int i;
-	short *p1 = (short *) p;
-	unsigned short *q1 = (unsigned short *) q;
+	short *p1;
+	unsigned short *q1;
 
+	p1 = (short *) p;
+	q1 = (unsigned short *) q;
 	for( x = 0; x < n; x++ ) {
 		/* TIFF uses unsigned 16 bit ... move zero, scale up L.
 		 */
                 q1[0] = VIPS_LSHIFT_INT( (int) p1[0], 1 );
-		
+
 		for( i = 1; i < samples_per_pixel; i++ )
 			q1[i] = p1[i];
 
@@ -1288,7 +1290,7 @@ wtiff_pack2tiff( Wtiff *wtiff, Layer *layer,
 			invert_band0( wtiff, q, p, area->width );
 		else if( wtiff->im->BandFmt == VIPS_FORMAT_SHORT &&
 			wtiff->im->Type == VIPS_INTERPRETATION_LABS )
-			LabS2Lab16( q, p, area->width, in->im->Bands);
+			LabS2Lab16( q, p, area->width, in->im->Bands );
 		else
 			memcpy( q, p, 
 				area->width * 

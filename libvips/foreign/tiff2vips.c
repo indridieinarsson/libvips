@@ -764,7 +764,7 @@ rtiff_guess_format( Rtiff *rtiff )
 /* Per-scanline process function for VIPS_CODING_LABQ.
  */
 static void
-rtiff_labpack_line( Rtiff *rtiff, VipsPel *q, VipsPel *p, int n, void *dummy )
+rtiff_lab8_line( Rtiff *rtiff, VipsPel *q, VipsPel *p, int n, void *dummy )
 {
 	int samples_per_pixel = rtiff->header.samples_per_pixel;
 
@@ -784,7 +784,7 @@ rtiff_labpack_line( Rtiff *rtiff, VipsPel *q, VipsPel *p, int n, void *dummy )
 /* Read an 8-bit LAB image.
  */
 static int
-rtiff_parse_labpack( Rtiff *rtiff, VipsImage *out )
+rtiff_parse_lab8( Rtiff *rtiff, VipsImage *out )
 {
 	if( rtiff_check_min_samples( rtiff, 3 ) ||
 		rtiff_check_bits( rtiff, 8 ) ||
@@ -796,35 +796,34 @@ rtiff_parse_labpack( Rtiff *rtiff, VipsImage *out )
 	out->Coding = VIPS_CODING_LABQ; 
 	out->Type = VIPS_INTERPRETATION_LAB; 
 
-	rtiff->sfn = rtiff_labpack_line;
+	rtiff->sfn = rtiff_lab8_line;
 
 	return( 0 );
 }
 
-
-/* Per-scanline process function for 8-bit VIPS_CODING_LAB to 16-bit LabS with alpha channels.
+/* Per-scanline process function for 8-bit PHOTOMETRIC_CIELAB to 16-bit LabS 
+ * with alpha channels.
  */
 static void
-rtiff_lab_whit_alpha_line(Rtiff* rtiff, VipsPel* q, VipsPel* p, int n, void* dummy)
+rtiff_lab8_alpha_line( Rtiff *rtiff, 
+	VipsPel *q, VipsPel *p, int n, void *dummy )
 {
 	int samples_per_pixel = rtiff->header.samples_per_pixel;
 
-	unsigned char* p1;
-	short* q1;
+	unsigned char *p1;
+	short *q1;
 	int x;
 	int i;
 
-	p1 = (unsigned char*)p;
-	q1 = (short*)q;
-	int L;
-	for (x = 0; x < n; x++) {
+	p1 = (unsigned char *) p;
+	q1 = (short *) q;
+	for( x = 0; x < n; x++ ) {
+		q1[0] = (unsigned int) p1[0] * 32767 / 255;
+		q1[1] = ((short) p1[1] << 8) | p1[1];
+		q1[2] = ((short) p1[2] << 8) | p1[1];
 
-		q1[0] = ((unsigned int)(p1[0]) * 32767) / 255;
-		q1[1] = (short)(p1[1]) << 8;
-		q1[2] = (short)(p1[2]) << 8;
-
-		for (i = 3; i < samples_per_pixel; i++)
-			q1[i] = (p1[i] << 8) + p1[i];
+		for( i = 3; i < samples_per_pixel; i++ )
+			q1[i] = (p1[i] << 8) | p1[i];
 
 		q1 += samples_per_pixel;
 		p1 += samples_per_pixel;
@@ -834,41 +833,41 @@ rtiff_lab_whit_alpha_line(Rtiff* rtiff, VipsPel* q, VipsPel* p, int n, void* dum
 /* Read an 8-bit LAB image with alpha bands into 16-bit LabS.
  */
 static int
-rtiff_parse_lab_with_alpha(Rtiff* rtiff, VipsImage* out)
+rtiff_parse_lab8_alpha( Rtiff *rtiff, VipsImage *out )
 {
-	if (rtiff_check_min_samples(rtiff, 4) ||
-		rtiff_check_bits(rtiff, 8) ||
-		rtiff_check_interpretation(rtiff, PHOTOMETRIC_CIELAB))
-		return(-1);
+	if( rtiff_check_min_samples( rtiff, 4 ) ||
+		rtiff_check_bits( rtiff, 8 ) ||
+		rtiff_check_interpretation( rtiff, PHOTOMETRIC_CIELAB ) )
+		return( -1 );
 
 	out->Bands = rtiff->header.samples_per_pixel;
 	out->BandFmt = VIPS_FORMAT_SHORT;
 	out->Coding = VIPS_CODING_NONE;
 	out->Type = VIPS_INTERPRETATION_LABS;
 
-	rtiff->sfn = rtiff_lab_whit_alpha_line;
+	rtiff->sfn = rtiff_lab8_alpha_line;
 
-	return(0);
+	return( 0 );
 }
 
 /* Per-scanline process function for LABS.
  */
 static void
-rtiff_labs_line( Rtiff *rtiff, VipsPel *q, VipsPel *p, int n, void *dummy )
+rtiff_lab16_line( Rtiff *rtiff, VipsPel *q, VipsPel *p, int n, void *dummy )
 {
 	int samples_per_pixel = rtiff->header.samples_per_pixel;
 
-	unsigned short *p1;
+	short *p1;
 	short *q1;
 	int x;
 	int i; 
 
-	p1 = (unsigned short *) p;
+	p1 = (short *) p;
 	q1 = (short *) q;
 	for( x = 0; x < n; x++ ) {
 		/* We use a signed int16 for L.
 		 */
-		q1[0] = p1[0] >> 1;
+		q1[0] = (p1[0] + 1) >> 1;
 
 		for( i = 1; i < samples_per_pixel; i++ ) 
 			q1[i] = p1[i];
@@ -881,7 +880,7 @@ rtiff_labs_line( Rtiff *rtiff, VipsPel *q, VipsPel *p, int n, void *dummy )
 /* Read a 16-bit LAB image.
  */
 static int
-rtiff_parse_labs( Rtiff *rtiff, VipsImage *out )
+rtiff_parse_lab16( Rtiff *rtiff, VipsImage *out )
 {
 	if( rtiff_check_min_samples( rtiff, 3 ) ||
 		rtiff_check_bits( rtiff, 16 ) ||
@@ -893,7 +892,7 @@ rtiff_parse_labs( Rtiff *rtiff, VipsImage *out )
 	out->Coding = VIPS_CODING_NONE; 
 	out->Type = VIPS_INTERPRETATION_LABS; 
 
-	rtiff->sfn = rtiff_labs_line;
+	rtiff->sfn = rtiff_lab16_line;
 
 	return( 0 );
 }
@@ -1383,12 +1382,12 @@ rtiff_pick_reader( Rtiff *rtiff )
 	if( photometric_interpretation == PHOTOMETRIC_CIELAB ) {
 		if (bits_per_sample == 8) {
 			if (samples_per_pixel > 3)
-				return(rtiff_parse_lab_with_alpha);
+				return( rtiff_parse_lab8_alpha );
 			else
-				return(rtiff_parse_labpack);
+				return( rtiff_parse_lab8 );
 		}	
 		if( bits_per_sample == 16 )
-			return( rtiff_parse_labs );
+			return( rtiff_parse_lab16 );
 	}
 
 	if( photometric_interpretation == PHOTOMETRIC_MINISWHITE ||
@@ -2153,9 +2152,6 @@ rtiff_read_stripwise( Rtiff *rtiff, VipsImage *out )
 static int
 rtiff_header_read( Rtiff *rtiff, RtiffHeader *header )
 {
-	uint16 extra_samples_count;
-	uint16 *extra_samples_types;
-
 	if( !tfget32( rtiff->tiff, TIFFTAG_IMAGEWIDTH, &header->width ) ||
 		!tfget32( rtiff->tiff, TIFFTAG_IMAGELENGTH, &header->height ) ||
 		!tfget16( rtiff->tiff, 
