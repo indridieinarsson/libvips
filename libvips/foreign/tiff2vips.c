@@ -2152,6 +2152,9 @@ rtiff_read_stripwise( Rtiff *rtiff, VipsImage *out )
 static int
 rtiff_header_read( Rtiff *rtiff, RtiffHeader *header )
 {
+	uint16 extra_samples_count;
+	uint16 *extra_samples_types;
+
 	if( !tfget32( rtiff->tiff, TIFFTAG_IMAGEWIDTH, &header->width ) ||
 		!tfget32( rtiff->tiff, TIFFTAG_IMAGELENGTH, &header->height ) ||
 		!tfget16( rtiff->tiff, 
