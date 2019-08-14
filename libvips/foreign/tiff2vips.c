@@ -1380,8 +1380,8 @@ rtiff_pick_reader( Rtiff *rtiff )
 	int samples_per_pixel = rtiff->header.samples_per_pixel;
 
 	if( photometric_interpretation == PHOTOMETRIC_CIELAB ) {
-		if (bits_per_sample == 8) {
-			if (samples_per_pixel > 3)
+		if( bits_per_sample == 8 ) {
+			if( samples_per_pixel > 3 )
 				return( rtiff_parse_lab8_alpha );
 			else
 				return( rtiff_parse_lab8 );
