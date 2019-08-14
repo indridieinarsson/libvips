@@ -191,6 +191,9 @@
  * 	  number, so it ignores more TIFF-like, but not TIFF images
  * 20/7/19
  * 	- use "minimise" for early shutdown, rather than read Y position
+ * 14/8/19 angelmixu
+ * 	- add 16-bit LAB
+ * 	- add LAB + alpha
  */
 
 /*
@@ -867,7 +870,7 @@ rtiff_lab16_line( Rtiff *rtiff, VipsPel *q, VipsPel *p, int n, void *dummy )
 	for( x = 0; x < n; x++ ) {
 		/* We use a signed int16 for L.
 		 */
-		q1[0] = (p1[0] + 1) >> 1;
+		q1[0] = (unsigned short) p1[0] >> 1;
 
 		for( i = 1; i < samples_per_pixel; i++ ) 
 			q1[i] = p1[i];
