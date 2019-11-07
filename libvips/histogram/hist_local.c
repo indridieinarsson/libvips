@@ -78,6 +78,7 @@ typedef struct _VipsHistLocal {
 	int height;
 
 	int max_slope;
+    int n_bins;
 
 } VipsHistLocal;
 
@@ -119,6 +120,7 @@ static void *
 vips_hist_local_start( VipsImage *out, void *a, void *b )
 {
 	VipsImage *in = (VipsImage *) a;
+	const VipsHistLocal *local = (VipsHistLocal *) b;
 	VipsHistLocalSequence *seq;
 
 	int i;
@@ -135,13 +137,104 @@ vips_hist_local_start( VipsImage *out, void *a, void *b )
 	}
 
 	for( i = 0; i < in->Bands; i++ )
-		if( !(seq->hist[i] = VIPS_ARRAY( NULL, 256, unsigned int )) ) {
+		if( !(seq->hist[i] = VIPS_ARRAY( NULL, local->n_bins, unsigned int )) ) {
 		vips_hist_local_stop( seq, NULL, NULL );
 		return( NULL ); 
 	}
 
 	return( seq );
 }
+
+/* Find histogram for the start of this line. 
+ */
+#define HISTOLOOP( ITYPE ) { \
+    /*p1 = p; */ \
+    printf("No Loop  done\n"); \
+    int pelindex=0; \
+    ITYPE *p = (ITYPE *) ppel; \
+    ITYPE *q = (ITYPE *) qpel; \
+    printf("Casting p1\n"); \
+    VipsPel * ptmp = ppel; \
+    ITYPE *p1; \
+    p1 = (ITYPE *) ptmp; \
+    printf("Done casting p1\n"); \
+    for( j = 0; j < local->height; j++ ) { \
+        for( i = 0, x = 0; x < local->width; x++ ) { \
+            pelindex = p1[i]/npels_bin; \
+            for( b = 0; b < bands; b++, i++ ) {\
+                seq->hist[b][pelindex] += 1; \
+            } \
+        } \
+        ptmp += lsk; \
+        p1 = (ITYPE *) ptmp; \
+    } \
+    printf("Loop 1 done\n"); \
+    /* Loop for output pels. */ \
+    for( x = 0; x < r->width; x++ ){ \
+        for( b = 0; b < bands; b++ ) { \
+            /* Sum histogram up to current pel.  */ \
+            unsigned int * hist = seq->hist[b]; \
+            const int target = p[centre + b]; \
+            /* This is the bin index of the target value in the histogram: */ \
+            const int targetindex = target/npels_bin; \
+            int sum; \
+            sum = 0; \
+            /* For CLAHE we need to limit the height of the */ \
+            /* hist to limit the amount we boost the        */ \
+            /* contrast by.                                 */ \
+            if( max_slope > 0 ) { \
+                int sum_over; \
+                sum_over = 0; \
+                /* Must be <= target, since a cum hist */ \
+                /* always includes the current element.*/ \
+                for( i = 0; i <= targetindex; i++ ) { \
+                    if( hist[i] > max_slope ) { \
+                        sum_over += hist[i] - max_slope; \
+                        sum += max_slope; \
+                    } \
+                    else \
+                    sum += hist[i]; \
+                } \
+                for( ; i < local->n_bins; i++ ) { \
+                    if( hist[i] > max_slope ) \
+                    sum_over += hist[i] - max_slope; \
+                } \
+                \
+                /* The extra clipped off bit from the  */ \
+                /* top of the hist is spread over all  */ \
+                /* bins equally, then summed to target.*/ \
+                /* ------------------------------------*/ \
+                /* I'm not sure this is correct...     */ \
+                sum += (target + 1) * sum_over / local->n_bins; \
+            } \
+            else { \
+                sum = 0; \
+                for( i = 0; i <= targetindex; i++ ) \
+                    sum += hist[i]; \
+            } \
+            /* This can't overflow, even in        */ \
+            /* contrast-limited mode.              */ \
+            /* Scale by 255, not 256, or we'll get */ \
+            /* overflow.                           */ \
+            q[b] = maxpelval * sum / (local->width * local->height); \
+            /* Adapt histogram --- remove the pels from */ \
+            /* the left hand column, add in pels for a  */ \
+            /* new right-hand column.                   */ \
+            /* p1 = p + b; */ \
+            ptmp = p + b; \
+            p1 = (ITYPE *) ptmp; \
+            for( j = 0; j < local->height; j++ ) { \
+                hist[p1[0]] -= 1; \
+                hist[p1[bands * local->width]] += 1; \
+                ptmp += lsk; \
+                p1 = (ITYPE *) ptmp; \
+            } \
+        } \
+        p += bands; \
+        q += bands; \
+    } \
+  }
+
 
 static int
 vips_hist_local_generate( VipsRegion *or, 
@@ -153,128 +246,63 @@ vips_hist_local_generate( VipsRegion *or,
 	VipsRect *r = &or->valid;
 	const int bands = in->Bands; 
 	const int max_slope = local->max_slope;
+	const int n_bins = local->n_bins;
+
+    printf("n_bins = %d\n", local->n_bins);
+    printf("max_slope = %d\n", local->max_slope);
 
 	VipsRect irect;
 	int y;
 	int lsk;
 	int centre;		/* Offset to move to centre of window */
-
 	/* What part of ir do we need?
 	 */
+    printf("debug 1 \n");
 	irect.left = r->left;
 	irect.top = r->top;
 	irect.width = r->width + local->width; 
 	irect.height = r->height + local->height; 
-	if( vips_region_prepare( seq->ir, &irect ) )
+    printf("debug 2 %d, %d\n", irect.width, irect.height );
+	if( vips_region_prepare( seq->ir, &irect ) ) {
+        printf("prepare failed : \n");
 		return( -1 );
+    }
 
+    printf("debug 3 \n");
 	lsk = VIPS_REGION_LSKIP( seq->ir );
+    printf("debug 4 \n");
 	centre = lsk * (local->height / 2) + bands * (local->width / 2);
+    printf("debug 5 \n");
 
 	for( y = 0; y < r->height; y++ ) {
 		/* Get input and output pointers for this line.
 		 */
-		VipsPel * restrict p = 
+        printf("Get ppel\n");
+		VipsPel * ppel = 
 			VIPS_REGION_ADDR( seq->ir, r->left, r->top + y );
-		VipsPel * restrict q = 
+        printf("Get qpel\n");
+		VipsPel * qpel = 
 			VIPS_REGION_ADDR( or, r->left, r->top + y );
+		// VipsPel * restrict p1;
 
-		VipsPel * restrict p1;
 		int x, i, j, b;
 
 		/* Find histogram for the start of this line. 
 		 */
+        printf("zero bins ppel\n");
 		for( b = 0; b < bands; b++ )
-			memset( seq->hist[b], 0, 256 * sizeof( unsigned int ) );
-		p1 = p;
-		for( j = 0; j < local->height; j++ ) {
-			for( i = 0, x = 0; x < local->width; x++ )
-				for( b = 0; b < bands; b++, i++ )
-					seq->hist[b][p1[i]] += 1;
+			memset( seq->hist[b], 0, local->n_bins * sizeof( unsigned int ) );
 
-			p1 += lsk;
-		}
-
-		/* Loop for output pels.
-		 */
-		for( x = 0; x < r->width; x++ ) {
-			for( b = 0; b < bands; b++ ) {
-				/* Sum histogram up to current pel.
-				 */
-				unsigned int * restrict hist = seq->hist[b]; 
-				const int target = p[centre + b];
-
-				int sum;
-
-				sum = 0;
-
-				/* For CLAHE we need to limit the height of the
-				 * hist to limit the amount we boost the
-				 * contrast by. 
-				 */
-				if( max_slope > 0 ) {
-					int sum_over;
-
-					sum_over = 0;
-
-					/* Must be <= target, since a cum hist
-					 * always includes the current element.
-					 */
-					for( i = 0; i <= target; i++ ) {
-						if( hist[i] > max_slope ) {
-							sum_over += hist[i] - 
-								max_slope;
-							sum += max_slope;
-						}
-						else 
-							sum += hist[i];
-					}
-
-					for( ; i < 256; i++ ) {
-						if( hist[i] > max_slope ) 
-							sum_over += hist[i] - 
-								max_slope;
-					}
-
-					/* The extra clipped off bit from the
-					 * top of the hist is spread over all
-					 * bins equally, then summed to target.
-					 */
-					sum += (target + 1) * sum_over / 256;
-				}
-				else {
-					sum = 0;
-					for( i = 0; i <= target; i++ )
-						sum += hist[i];
-				}
-
-				/* This can't overflow, even in
-				 * contrast-limited mode.
-				 *
-				 * Scale by 255, not 256, or we'll get
-				 * overflow.
-				 */
-				q[b] = 255 * sum / 
-					(local->width * local->height);
-
-				/* Adapt histogram --- remove the pels from 
-				 * the left hand column, add in pels for a 
-				 * new right-hand column.
-				 */
-				p1 = p + b;
-				for( j = 0; j < local->height; j++ ) {
-					hist[p1[0]] -= 1;
-					hist[p1[bands * local->width]] += 1;
-
-					p1 += lsk;
-				}
-			}
-
-			p += bands;
-			q += bands;
-		}
+        int maxpelval = USHRT_MAX;
+        //int maxpelval = UCHAR_MAX;
+        printf("maxpelval = %d\n", maxpelval);
+        printf("n_bins = %d\n", local->n_bins);
+        int npels_bin = maxpelval/local->n_bins;
+        printf("npels_bin = %d\n", npels_bin);
+        printf("Call HISTOLOOP\n");
+        HISTOLOOP(unsigned short);
+        //HISTOLOOP(unsigned char);
 	}
-
 	return( 0 );
 }
 
@@ -296,8 +324,20 @@ vips_hist_local_build( VipsObject *object )
 		return( -1 );
 	in = t[0]; 
 
-	if( vips_check_format( class->nickname, in, VIPS_FORMAT_UCHAR ) )
-		return( -1 );
+    switch( vips_image_get_format( in ) ) {
+        case VIPS_FORMAT_UCHAR:
+            printf("uchar : %d\n", 256);
+            break;
+        case VIPS_FORMAT_USHORT:
+            printf("ushort : %d\n", 65536);
+            break;
+    }
+  //local->npels_bin = local->maxpelval/local->n_bins;
+  //printf("Setting npels_bin %d, %d, %d\n",local->maxpelval, local->n_bins, local->npels_bin);
+
+  //if( vips_check_format( class->nickname, in, VIPS_FORMAT_UCHAR ) )
+  //if( vips_check_format( class->nickname, in, VIPS_FORMAT_USHORT ) )
+  //  return( -1 );
 
 	if( local->width > in->Xsize || 
 		local->height > in->Ysize ) {
@@ -307,12 +347,15 @@ vips_hist_local_build( VipsObject *object )
 
 	/* Expand the input. 
 	 */
+  printf("width %d x height %d \n", local->width , local->height );
+  printf("Other arguments : %d, %d, %d, %d\n", in->Xsize, local->width , in->Ysize , local->height);
 	if( vips_embed( in, &t[1], 
 		local->width / 2, local->height / 2, 
 		in->Xsize + local->width - 1, in->Ysize + local->height - 1,
-		"extend", VIPS_EXTEND_MIRROR,
-		NULL ) )
-		return( -1 );
+                  //"extend", VIPS_EXTEND_WHITE,
+    "extend", VIPS_EXTEND_MIRROR,
+    NULL ) )
+    return( -1 );
 	in = t[1];
 
 	g_object_set( object, "out", vips_image_new(), NULL ); 
@@ -320,6 +363,7 @@ vips_hist_local_build( VipsObject *object )
 	/* Set demand hints. FATSTRIP is good for us, as THINSTRIP will cause
 	 * too many recalculations on overlaps.
 	 */
+  //  VIPS_DEMAND_STYLE_FATSTRIP, in, NULL ) )
 	if( vips_image_pipelinev( local->out, 
 		VIPS_DEMAND_STYLE_FATSTRIP, in, NULL ) )
 		return( -1 );
@@ -387,6 +431,12 @@ vips_hist_local_class_init( VipsHistLocalClass *class )
 		G_STRUCT_OFFSET( VipsHistLocal, max_slope ),
 		0, 100, 0 );
 
+	VIPS_ARG_INT( class, "n_bins", 7, 
+                _( "Number of bins" ), 
+                _( "Number of histogram bins" ),
+                VIPS_ARGUMENT_OPTIONAL_INPUT,
+                G_STRUCT_OFFSET( VipsHistLocal, n_bins ),
+                0, 65536, 256 );
 }
 
 static void
@@ -405,6 +455,7 @@ vips_hist_local_init( VipsHistLocal *local )
  * Optional arguments:
  *
  * * @max_slope: maximum brightening
+ * * @n_bins: Number of histogram bins
  *
  * Performs local histogram equalisation on @in using a
  * window of size @width by @height centered on the input pixel. 
