@@ -149,15 +149,12 @@ vips_hist_local_start( VipsImage *out, void *a, void *b )
  */
 #define HISTOLOOP( ITYPE ) { \
     /*p1 = p; */ \
-    printf("No Loop  done\n"); \
     int pelindex=0; \
     ITYPE *p = (ITYPE *) ppel; \
     ITYPE *q = (ITYPE *) qpel; \
-    printf("Casting p1\n"); \
     VipsPel * ptmp = ppel; \
     ITYPE *p1; \
-    p1 = (ITYPE *) ptmp; \
-    printf("Done casting p1\n"); \
+    p1 = (ITYPE *) p; \
     for( j = 0; j < local->height; j++ ) { \
         for( i = 0, x = 0; x < local->width; x++ ) { \
             pelindex = p1[i]/npels_bin; \
@@ -165,10 +162,10 @@ vips_hist_local_start( VipsImage *out, void *a, void *b )
                 seq->hist[b][pelindex] += 1; \
             } \
         } \
-        ptmp += lsk; \
-        p1 = (ITYPE *) ptmp; \
+        /* ptmp += lsk; */ \
+        /* p1 = (ITYPE *) ptmp; */ \
+        p1 += lsk*ps; \
     } \
-    printf("Loop 1 done\n"); \
     /* Loop for output pels. */ \
     for( x = 0; x < r->width; x++ ){ \
         for( b = 0; b < bands; b++ ) { \
@@ -209,7 +206,8 @@ vips_hist_local_start( VipsImage *out, void *a, void *b )
             } \
             else { \
                 sum = 0; \
-                for( i = 0; i <= targetindex; i++ ) \
+                /* for( i = 0; i <= targetindex; i++ ) */ \
+                for( i = 0; i < targetindex; i++ ) \
                     sum += hist[i]; \
             } \
             /* This can't overflow, even in        */ \
@@ -230,8 +228,8 @@ vips_hist_local_start( VipsImage *out, void *a, void *b )
                 p1 = (ITYPE *) ptmp; \
             } \
         } \
-        p += bands; \
-        q += bands; \
+        p += bands*ps; \
+        q += bands*ps; \
     } \
   }
 
@@ -248,6 +246,9 @@ vips_hist_local_generate( VipsRegion *or,
 	const int max_slope = local->max_slope;
 	const int n_bins = local->n_bins;
 
+    int ps = VIPS_IMAGE_SIZEOF_PEL(in);
+    printf("sizeof pel = %d\n", ps);
+
     printf("n_bins = %d\n", local->n_bins);
     printf("max_slope = %d\n", local->max_slope);
 
@@ -258,10 +259,12 @@ vips_hist_local_generate( VipsRegion *or,
 	/* What part of ir do we need?
 	 */
     printf("debug 1 \n");
+    printf("valid region: %d x %d \n",r->width, r->height);
+    printf("valid region: %d x %d \n",r->left, r->top);
 	irect.left = r->left;
 	irect.top = r->top;
-	irect.width = r->width + local->width; 
-	irect.height = r->height + local->height; 
+	irect.width = r->width + local->width;
+	irect.height = r->height + local->height;
     printf("debug 2 %d, %d\n", irect.width, irect.height );
 	if( vips_region_prepare( seq->ir, &irect ) ) {
         printf("prepare failed : \n");
@@ -277,10 +280,8 @@ vips_hist_local_generate( VipsRegion *or,
 	for( y = 0; y < r->height; y++ ) {
 		/* Get input and output pointers for this line.
 		 */
-        printf("Get ppel\n");
 		VipsPel * ppel = 
 			VIPS_REGION_ADDR( seq->ir, r->left, r->top + y );
-        printf("Get qpel\n");
 		VipsPel * qpel = 
 			VIPS_REGION_ADDR( or, r->left, r->top + y );
 		// VipsPel * restrict p1;
@@ -289,17 +290,12 @@ vips_hist_local_generate( VipsRegion *or,
 
 		/* Find histogram for the start of this line. 
 		 */
-        printf("zero bins ppel\n");
 		for( b = 0; b < bands; b++ )
 			memset( seq->hist[b], 0, local->n_bins * sizeof( unsigned int ) );
 
-        int maxpelval = USHRT_MAX;
-        //int maxpelval = UCHAR_MAX;
-        printf("maxpelval = %d\n", maxpelval);
-        printf("n_bins = %d\n", local->n_bins);
+        int maxpelval = 65536;//USHRT_MAX;
+        //int maxpelval = 256;
         int npels_bin = maxpelval/local->n_bins;
-        printf("npels_bin = %d\n", npels_bin);
-        printf("Call HISTOLOOP\n");
         HISTOLOOP(unsigned short);
         //HISTOLOOP(unsigned char);
 	}
